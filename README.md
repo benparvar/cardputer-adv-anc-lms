@@ -3,18 +3,12 @@ Cardputer ADV ANC LMS
 
 💻 Adapted ANC LMS code (no external hardware required)
 
-What the meter shows:
+Display Reading
 
-0% → no noise reduction
+White line: Audio captured (noise + voice)
 
-50% → half the noise energy removed
+Green line: Audio after LMS cancellation
 
-80–90% → strong cancellation (continuous noise)
+Green bar: Real-time noise reduction percentage
 
-Practical interpretation:
-
-Fan/constant noise: high and stable bar
-
-Human voice: low bar (ANC preserves the voice)
-
-Impulsive noise: bar varies rapidly
+This makes it easy to visually adjust MU and LMS_TAPS to achieve the best cancellation without distorting the voice.

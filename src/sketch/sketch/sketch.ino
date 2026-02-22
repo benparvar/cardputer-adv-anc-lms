@@ -48,6 +48,24 @@ void lmsProcess(int16_t* in, int16_t* out, size_t len) {
   }
 }
 
+void drawWaveforms(int16_t* in, int16_t* out, size_t len) {
+  int h = M5Cardputer.Display.height();
+  int w = M5Cardputer.Display.width();
+  int centerY = h / 2;
+
+  M5Cardputer.Display.fillRect(0, 0, w, 50, BLACK);
+
+  for (int x = 0; x < w - 1 && x < (int)len - 1; x++) {
+    int y1 = centerY + (in[x] >> 8);
+    int y2 = centerY + (in[x + 1] >> 8);
+    M5Cardputer.Display.drawLine(x, y1, x + 1, y2, WHITE);
+
+    int y3 = centerY + (out[x] >> 8);
+    int y4 = centerY + (out[x + 1] >> 8);
+    M5Cardputer.Display.drawLine(x, y3, x + 1, y4, GREEN);
+  }
+}
+
 void drawReductionMeter(float reduction) {
   reduction = constrain(reduction, 0.0f, 1.0f);
 
@@ -68,7 +86,7 @@ void setup() {
   M5Cardputer.Display.setRotation(1);
   M5Cardputer.Display.setTextColor(WHITE);
   M5Cardputer.Display.setFont(&fonts::FreeSansBoldOblique12pt7b);
-  M5Cardputer.Display.drawString("ANC LMS 128", 30, 20);
+  M5Cardputer.Display.drawString("ANC LMS 128", 30, 110);
 
   M5Cardputer.Speaker.end();
   M5Cardputer.Mic.begin();
@@ -92,8 +110,7 @@ void loop() {
       reduction = 1.0f - (rms_out / rms_in);
     }
 
-    // Atualiza medidor visual
-    M5Cardputer.Display.fillRect(0, 50, 240, 70, BLACK);
+    drawWaveforms(mic_buf, out_buf, BLOCK);
     drawReductionMeter(reduction);
 
     while (M5Cardputer.Mic.isRecording()) delay(0);
@@ -108,11 +125,10 @@ void loop() {
     M5Cardputer.Mic.begin();
   }
 
-  // Reset adaptativo
   if (M5Cardputer.BtnA.wasClicked()) {
     memset(w, 0, sizeof(w));
     memset(x_ref, 0, sizeof(x_ref));
     M5Cardputer.Display.clear();
-    M5Cardputer.Display.drawString("FILTER RESET", 20, 20);
+    M5Cardputer.Display.drawString("FILTER RESET", 20, 110);
   }
 }
