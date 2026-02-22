@@ -3,22 +3,18 @@ Cardputer ADV ANC LMS
 
 💻 Adapted ANC LMS code (no external hardware required)
 
-What changed for ultra-low latency
+What the meter shows:
 
-BLOCK = 128 → ~7.5 ms of audio per cycle
+0% → no noise reduction
 
-LMS_TAPS = 16 → less processing
+50% → half the noise energy removed
 
-delay(0) → avoids extra delays
+80–90% → strong cancellation (continuous noise)
 
-Optimized LMS update (mu_e)
+Practical interpretation:
 
-Typical latency: ~10–15 ms, limited by hardware (non-simultaneous mic/speaker).
+Fan/constant noise: high and stable bar
 
-Fine-tuning tips
+Human voice: low bar (ANC preserves the voice)
 
-Constant noise environment (fan): increase MU slightly (0.0001)
-
-Distorted voice: reduce MU (0.00003)
-
-Weak cancellation: increase LMS_TAPS to 24 (more CPU)
+Impulsive noise: bar varies rapidly
