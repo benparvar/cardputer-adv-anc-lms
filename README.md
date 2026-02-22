@@ -5,44 +5,24 @@ Cardputer ADV ANC LMS
 
 This code uses the internal microphone and speaker.
 
-------
+How it works
 
-🔧 Important Adjustments
+The microphone records short blocks (256 samples).
 
-1️⃣ Verify correct pins
+The algorithm continuously estimates background noise.
 
-If there is no sound, confirm in your Cardputer schematic:
+It subtracts this noise from the signal (adaptive noise suppression).
 
-data_in_num = internal microphone pin
+It immediately plays back the filtered audio.
 
-data_out_num = internal speaker pin
+It loops, creating a "near real-time" noise cancellation effect.
 
-2️⃣ Latency (critical for ANC)
-#define BUFFER_SIZE 32 // lower = better cancellation
-3️⃣ Gain and stability
+Possible improvements
 
-If you hear:
+Implement adaptive LMS filter (more advanced ANC)
 
-hissing → decrease MU
+FFT + spectral subtraction
 
-weak cancellation → increase MU slightly
+Smaller buffer (128 samples) for lower latency
 
-🎯 Important limitation (internal microphone)
-
-Since the microphone is far from the ear:
-
-Cancellation will be moderate
-
-Works best for constant noises (fan, motor)
-
-For "professional headphone level" ANC, the microphone needs to be close to the ear (ANC feedback).
-
-Next recommended step
-
-Would you like me to adapt it for:
-
-🎧 Use with headphones (P2 or I2S external DAC)
-
-or
-
-🎚️ Auto-calibration that automatically adjusts MU and latency?
+Use an external reference microphone for true ANC (feedforward)

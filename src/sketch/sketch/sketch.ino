@@ -1,101 +1,82 @@
-#include <driver/i2s.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/queue.h>
+#include <M5Cardputer.h>
 
-#define I2S_PORT I2S_NUM_0
+static constexpr size_t block_length = 256;
+static constexpr size_t samplerate = 17000;
 
-#define SAMPLE_RATE 16000
-#define BUFFER_SIZE 64
-#define FILTER_TAPS 32
-#define MU 0.00002f
+int16_t rec_buffer[block_length];
+int16_t play_buffer[block_length];
 
-static QueueHandle_t audioQueue;
+// Estimador adaptativo de ruído
+float noise_estimate = 0.0f;
+static constexpr float noise_alpha = 0.98f;   // suavização do ruído
+static constexpr float suppress_gain = 1.2f;  // intensidade da supressão
 
-float filter[FILTER_TAPS] = {0};
-float x[FILTER_TAPS] = {0};
+void noiseCancelProcess(int16_t* in, int16_t* out, size_t len) {
+  for (size_t i = 0; i < len; i++) {
+    float sample = (float)in[i];
 
-void setupI2S() {
-  i2s_config_t config = {
-    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_RX),
-    .sample_rate = SAMPLE_RATE,
-    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-    .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-    .communication_format = I2S_COMM_FORMAT_I2S,
-    .dma_buf_count = 6,
-    .dma_buf_len = BUFFER_SIZE,
-    .use_apll = false,
-    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1
-  };
+    // Estima ruído (média exponencial do módulo)
+    float abs_sample = fabs(sample);
+    noise_estimate = noise_alpha * noise_estimate + (1.0f - noise_alpha) * abs_sample;
 
-  // Pinos internos típicos do Cardputer
-  i2s_pin_config_t pins = {
-    .bck_io_num = 41,
-    .ws_io_num = 42,
-    .data_out_num = 43,  // speaker
-    .data_in_num = 46    // mic interno
-  };
-
-  i2s_driver_install(I2S_PORT, &config, 0, NULL);
-  i2s_set_pin(I2S_PORT, &pins);
-}
-
-// 🎤 Captura
-void captureTask(void *param) {
-  int16_t buffer[BUFFER_SIZE];
-  size_t bytesRead;
-
-  while (true) {
-    i2s_read(I2S_PORT, buffer, sizeof(buffer), &bytesRead, portMAX_DELAY);
-    xQueueSend(audioQueue, buffer, portMAX_DELAY);
-  }
-}
-
-// 🧠 ANC LMS
-void ancTask(void *param) {
-  int16_t buffer[BUFFER_SIZE];
-  size_t bytesWritten;
-
-  while (true) {
-    if (xQueueReceive(audioQueue, buffer, portMAX_DELAY) == pdTRUE) {
-
-      for (int n = 0; n < BUFFER_SIZE; n++) {
-        float input = (float)buffer[n];
-
-        // histórico
-        for (int i = FILTER_TAPS - 1; i > 0; i--) {
-          x[i] = x[i - 1];
-        }
-        x[0] = input;
-
-        float y = 0;
-        for (int i = 0; i < FILTER_TAPS; i++) {
-          y += filter[i] * x[i];
-        }
-
-        float error = input + y;
-
-        for (int i = 0; i < FILTER_TAPS; i++) {
-          filter[i] -= MU * error * x[i];
-        }
-
-        buffer[n] = (int16_t)(-y);
-      }
-
-      i2s_write(I2S_PORT, buffer, sizeof(buffer), &bytesWritten, portMAX_DELAY);
+    // Subtração adaptativa de ruído
+    float cleaned = sample;
+    if (abs_sample < noise_estimate * 1.5f) {
+      cleaned = sample - (noise_estimate * suppress_gain) * (sample > 0 ? 1 : -1);
     }
+
+    // Clipping de segurança
+    if (cleaned > 32767) cleaned = 32767;
+    if (cleaned < -32768) cleaned = -32768;
+
+    out[i] = (int16_t)cleaned;
   }
 }
 
 void setup() {
-  setCpuFrequencyMhz(240);
+  auto cfg = M5.config();
+  M5Cardputer.begin(cfg);
 
-  audioQueue = xQueueCreate(4, sizeof(int16_t) * BUFFER_SIZE);
+  M5Cardputer.Display.setRotation(1);
+  M5Cardputer.Display.setTextColor(WHITE);
+  M5Cardputer.Display.setFont(&fonts::FreeSansBoldOblique12pt7b);
+  M5Cardputer.Display.drawString("ANC REALTIME", 20, 20);
 
-  setupI2S();
-
-  xTaskCreatePinnedToCore(captureTask, "Capture", 4096, NULL, 2, NULL, 0);
-  xTaskCreatePinnedToCore(ancTask, "ANC", 8192, NULL, 3, NULL, 1);
+  // Começa com microfone ativo
+  M5Cardputer.Speaker.end();
+  M5Cardputer.Mic.begin();
 }
 
-void loop() {}
+void loop() {
+  M5Cardputer.update();
+
+  if (!M5Cardputer.Mic.isEnabled()) return;
+
+  // Grava um pequeno bloco de áudio
+  if (M5Cardputer.Mic.record(rec_buffer, block_length, samplerate)) {
+
+    // Processa cancelamento de ruído
+    noiseCancelProcess(rec_buffer, play_buffer, block_length);
+
+    // Alterna rapidamente: mic OFF -> speaker ON
+    while (M5Cardputer.Mic.isRecording()) delay(1);
+    M5Cardputer.Mic.end();
+    M5Cardputer.Speaker.begin();
+    M5Cardputer.Speaker.setVolume(255);
+
+    // Reproduz áudio filtrado
+    M5Cardputer.Speaker.playRaw(play_buffer, block_length, samplerate, false, 1, 0);
+    while (M5Cardputer.Speaker.isPlaying()) delay(1);
+
+    // Retorna para gravação
+    M5Cardputer.Speaker.end();
+    M5Cardputer.Mic.begin();
+  }
+
+  // Botão A aumenta a agressividade do cancelamento
+  if (M5Cardputer.BtnA.wasClicked()) {
+    noise_estimate *= 1.2f;
+    M5Cardputer.Display.clear();
+    M5Cardputer.Display.drawString("ANC BOOST", 20, 20);
+  }
+}
