@@ -3,26 +3,32 @@ Cardputer ADV ANC LMS
 
 💻 Adapted ANC LMS code (no external hardware required)
 
-This code uses the internal microphone and speaker.
+Important Adjustments
 
-How it works
+LMS_TAPS: 16–64 (higher = better cancellation, more CPU)
 
-The microphone records short blocks (256 samples).
+MU:
 
-The algorithm continuously estimates background noise.
+Too high → distortion/unstable
 
-It subtracts this noise from the signal (adaptive noise suppression).
+Too low → slow adaptation
 
-It immediately plays back the filtered audio.
+Recommended range: 0.00001 to 0.0001
 
-It loops, creating a "near real-time" noise cancellation effect.
+Technical Note
 
-Possible improvements
+This is a “single-mic adaptive noise reduction” ANC. Real ANC (like premium headphones) needs:
 
-Implement adaptive LMS filter (more advanced ANC)
+External mic (noise)
 
-FFT + spectral subtraction
+Internal mic (error)
 
-Smaller buffer (128 samples) for lower latency
+Feedforward/feedback structure
 
-Use an external reference microphone for true ANC (feedforward)
+Even so, this LMS already removes:
+
+constant noise (fan)
+
+hiss
+
+continuous ambient noise

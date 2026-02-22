@@ -1,35 +1,46 @@
 #include <M5Cardputer.h>
 
-static constexpr size_t block_length = 256;
-static constexpr size_t samplerate = 17000;
+static constexpr size_t BLOCK = 256;
+static constexpr size_t SR = 17000;
+static constexpr size_t LMS_TAPS = 32;   // ordem do filtro
+static constexpr float MU = 0.00005f;    // taxa de adaptação (estabilidade)
 
-int16_t rec_buffer[block_length];
-int16_t play_buffer[block_length];
+int16_t mic_buf[BLOCK];
+int16_t out_buf[BLOCK];
 
-// Estimador adaptativo de ruído
-float noise_estimate = 0.0f;
-static constexpr float noise_alpha = 0.98f;   // suavização do ruído
-static constexpr float suppress_gain = 1.2f;  // intensidade da supressão
+// Filtro LMS
+float w[LMS_TAPS] = {0};      // coeficientes adaptativos
+float x_ref[LMS_TAPS] = {0};  // buffer de referência (histórico)
 
-void noiseCancelProcess(int16_t* in, int16_t* out, size_t len) {
-  for (size_t i = 0; i < len; i++) {
-    float sample = (float)in[i];
+void lmsProcess(int16_t* in, int16_t* out, size_t len) {
+  for (size_t n = 0; n < len; n++) {
+    float x = (float)in[n];
 
-    // Estima ruído (média exponencial do módulo)
-    float abs_sample = fabs(sample);
-    noise_estimate = noise_alpha * noise_estimate + (1.0f - noise_alpha) * abs_sample;
+    // Shift buffer de referência
+    for (int i = LMS_TAPS - 1; i > 0; i--) {
+      x_ref[i] = x_ref[i - 1];
+    }
+    x_ref[0] = x;
 
-    // Subtração adaptativa de ruído
-    float cleaned = sample;
-    if (abs_sample < noise_estimate * 1.5f) {
-      cleaned = sample - (noise_estimate * suppress_gain) * (sample > 0 ? 1 : -1);
+    // Saída estimada do ruído
+    float y = 0.0f;
+    for (int i = 0; i < LMS_TAPS; i++) {
+      y += w[i] * x_ref[i];
     }
 
-    // Clipping de segurança
-    if (cleaned > 32767) cleaned = 32767;
-    if (cleaned < -32768) cleaned = -32768;
+    // Erro (sinal limpo estimado)
+    float e = x - y;
 
-    out[i] = (int16_t)cleaned;
+    // Atualização LMS
+    for (int i = 0; i < LMS_TAPS; i++) {
+      w[i] += MU * e * x_ref[i];
+    }
+
+    // Clipping
+    if (e > 32767) e = 32767;
+    if (e < -32768) e = -32768;
+
+    out[n] = (int16_t)e;
   }
 }
 
@@ -40,9 +51,8 @@ void setup() {
   M5Cardputer.Display.setRotation(1);
   M5Cardputer.Display.setTextColor(WHITE);
   M5Cardputer.Display.setFont(&fonts::FreeSansBoldOblique12pt7b);
-  M5Cardputer.Display.drawString("ANC REALTIME", 20, 20);
+  M5Cardputer.Display.drawString("LMS ANC", 40, 20);
 
-  // Começa com microfone ativo
   M5Cardputer.Speaker.end();
   M5Cardputer.Mic.begin();
 }
@@ -52,31 +62,29 @@ void loop() {
 
   if (!M5Cardputer.Mic.isEnabled()) return;
 
-  // Grava um pequeno bloco de áudio
-  if (M5Cardputer.Mic.record(rec_buffer, block_length, samplerate)) {
+  if (M5Cardputer.Mic.record(mic_buf, BLOCK, SR)) {
 
-    // Processa cancelamento de ruído
-    noiseCancelProcess(rec_buffer, play_buffer, block_length);
+    // Processa filtro LMS
+    lmsProcess(mic_buf, out_buf, BLOCK);
 
-    // Alterna rapidamente: mic OFF -> speaker ON
+    // Alterna Mic -> Speaker
     while (M5Cardputer.Mic.isRecording()) delay(1);
     M5Cardputer.Mic.end();
+
     M5Cardputer.Speaker.begin();
     M5Cardputer.Speaker.setVolume(255);
 
-    // Reproduz áudio filtrado
-    M5Cardputer.Speaker.playRaw(play_buffer, block_length, samplerate, false, 1, 0);
+    M5Cardputer.Speaker.playRaw(out_buf, BLOCK, SR, false, 1, 0);
     while (M5Cardputer.Speaker.isPlaying()) delay(1);
 
-    // Retorna para gravação
     M5Cardputer.Speaker.end();
     M5Cardputer.Mic.begin();
   }
 
-  // Botão A aumenta a agressividade do cancelamento
+  // Ajuste dinâmico da taxa de adaptação
   if (M5Cardputer.BtnA.wasClicked()) {
-    noise_estimate *= 1.2f;
     M5Cardputer.Display.clear();
-    M5Cardputer.Display.drawString("ANC BOOST", 20, 20);
+    M5Cardputer.Display.drawString("MU:", 10, 20);
+    M5Cardputer.Display.drawString(String(MU, 6), 60, 20);
   }
 }
