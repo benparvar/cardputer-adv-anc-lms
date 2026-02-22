@@ -3,26 +3,22 @@ Cardputer ADV ANC LMS
 
 💻 Adapted ANC LMS code (no external hardware required)
 
-This code uses the internal microphone and speaker.
+What changed for ultra-low latency
 
-How it works
+BLOCK = 128 → ~7.5 ms of audio per cycle
 
-The microphone records short blocks (256 samples).
+LMS_TAPS = 16 → less processing
 
-The algorithm continuously estimates background noise.
+delay(0) → avoids extra delays
 
-It subtracts this noise from the signal (adaptive noise suppression).
+Optimized LMS update (mu_e)
 
-It immediately plays back the filtered audio.
+Typical latency: ~10–15 ms, limited by hardware (non-simultaneous mic/speaker).
 
-It loops, creating a "near real-time" noise cancellation effect.
+Fine-tuning tips
 
-Possible improvements
+Constant noise environment (fan): increase MU slightly (0.0001)
 
-Implement adaptive LMS filter (more advanced ANC)
+Distorted voice: reduce MU (0.00003)
 
-FFT + spectral subtraction
-
-Smaller buffer (128 samples) for lower latency
-
-Use an external reference microphone for true ANC (feedforward)
+Weak cancellation: increase LMS_TAPS to 24 (more CPU)
